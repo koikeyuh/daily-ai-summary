@@ -1,0 +1,51 @@
+name: daily-pubmed-summary
+
+on:
+  schedule:
+    - cron: "30 22 * * *"  # JST 07:30 相当（UTCで設定）
+  workflow_dispatch: {}     # 手動実行も可能
+
+permissions:
+  contents: write  # これが無いと push できない
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests google-generativeai
+          pip install -q -U google-genai
+
+      - name: Run script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          PUBMED_TOOL_EMAIL: ${{ secrets.PUBMED_TOOL_EMAIL }}
+          # 任意: NCBI APIキー（なくてもOK）
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          # カンマ区切りでジャーナル名（例は放射線腫瘍学系）
+          # JOURNALS: "Lancet Oncol,Int J Radiat Oncol Biol Phys,Adv Radiat Oncol,Clin Transl Radiat Oncol,Radiother Oncol,J Clin Oncol,Radiat Oncol"
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          GEMINI_MODEL: "gemini-2.5-flash"
+          SLEEP_BETWEEN_CALLS: "0.3"
+          # 3つの検索式（--- 区切り・複数行のままSecretへ保存済み）
+          SEARCH_QUERIES:     ${{ secrets.SEARCH_QUERIES }}
+
+          # 任意：取りこぼし防止の検索窓（日数）
+          WINDOW_DAYS: "2"   # 例: "7" にすると過去7日分を検索（既送は state で除外）
+        run: python daily_pubmed_digest.py
+
+      - name: Commit state (sent_pmids.json)
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update sent_pmids"
+          file_pattern: sent_pmids.json
