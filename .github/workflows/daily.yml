@@ -2,7 +2,7 @@ name: daily-pubmed-summary
 
 on:
   schedule:
-    - cron: "30 22 * * *"  # JST 07:30 相当（UTCで設定）
+    - cron: '0 21 * * *'  # 毎日 21:00 UTC = 毎日 06:00 JST
   workflow_dispatch: {}     # 手動実行も可能
 
 permissions:
@@ -39,9 +39,10 @@ jobs:
           SLEEP_BETWEEN_CALLS: "0.3"
           # 3つの検索式（--- 区切り・複数行のままSecretへ保存済み）
           SEARCH_QUERIES:     ${{ secrets.SEARCH_QUERIES }}
-
           # 任意：取りこぼし防止の検索窓（日数）
           WINDOW_DAYS: "2"   # 例: "7" にすると過去7日分を検索（既送は state で除外）
+          RECIPIENT_EMAILS:   ${{ secrets.RECIPIENT_EMAILS }}  # ← 複数宛先
+          MULTI_SEND_MODE:    "bcc"                             # ← 任意（既定 to）
         run: python daily_pubmed_digest.py
 
       - name: Commit state (sent_pmids.json)
