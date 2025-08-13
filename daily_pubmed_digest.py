@@ -578,13 +578,14 @@ def send_via_gmail(subject, body, recipients):
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain", "utf-8"))
 
-    # 宛先の見せ方（既定: To。全員のアドレスを隠したい場合は MULTI_SEND_MODE=bcc）
     mode = os.getenv("MULTI_SEND_MODE", "to").lower()
     if mode == "bcc":
-        msg["To"] = "Undisclosed recipients:;"
+        # 要望どおり：Bcc配信時は To を送信元アドレスに設定
+        msg["To"] = GMAIL_ADDRESS
         msg["Bcc"] = ", ".join(recipients)
-        envelope_to = recipients
+        envelope_to = recipients  # 自分にも届かせたい場合は [GMAIL_ADDRESS] を足す
     else:
+        # 通常：To に全宛先を列挙
         msg["To"] = ", ".join(recipients)
         envelope_to = recipients
 
