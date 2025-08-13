@@ -407,8 +407,8 @@ def _format_bullets(lines, target=4):
 PROMPT_TEMPLATE = Template("""You are a specialized summarizer for radiation oncology literature, tasked with creating concise Japanese summaries for busy radiation oncologists. Your output must be a strict JSON object.
 
 ### JSON Output Format
-- **title_ja**: A Japanese title (30-45 characters, ending with a noun, compressing any lengthy subtitles, and including the study design from the original title **only if explicitly mentioned**).
-- **bullets**: An array of 4 or 5 bullet points, each 60-120 characters long.
+- **title_ja**: A Japanese title (30-45 characters, ending with a noun, compressing any lengthy subtitles, and including the study design from the original title only if explicitly mentioned).
+- **bullets**: An array of 4 or 5 bullet points, each 60-120 characters long, written in a consistent "da/dearu" style (e.g., "〜である", "〜した").
 
 ### Key Rules
 - **Fact Extraction Only**: Summarize only the facts present in the provided title and abstract. Do not add external knowledge, rephrase information with different meanings, or make assumptions.
