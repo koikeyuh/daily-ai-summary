@@ -571,7 +571,7 @@ def summarize_title_and_bullets(title: str, abstract: str) -> dict:
     if title_ja.endswith(("。","．",".")):
         title_ja = title_ja[:-1]
     if not title_ja:
-        title_ja = "（邦題生成に失敗）"
+        title_ja = title_ja = translate_title_only(title) or "（邦題生成に失敗）"
 
     return {"title_ja": title_ja, "bullets": bullets}
 
