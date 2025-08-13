@@ -225,6 +225,69 @@ def _format_pt_for_display(pts):
         return ", ".join(PT_JA_MAP.get(p, p) for p in pts)
     return ", ".join(pts)
 
+# --- 国名抽出（エイリアスとTLDでロバスト化） ---
+COUNTRY_ALIASES = {
+    # 英語表記・別名 → 正規化（表示は右側の文字列）
+    "usa":"USA","united states":"USA","united states of america":"USA","u.s.a.":"USA",
+    "uk":"UK","united kingdom":"UK","england":"UK","scotland":"UK","wales":"UK","northern ireland":"UK",
+    "republic of korea":"South Korea","south korea":"South Korea","korea, republic of":"South Korea","korea":"South Korea",
+    "pr china":"China","p.r. china":"China","people's republic of china":"China","china":"China",
+    "japan":"Japan","germany":"Germany","france":"France","italy":"Italy","spain":"Spain",
+    "netherlands":"Netherlands","switzerland":"Switzerland","sweden":"Sweden","norway":"Norway",
+    "denmark":"Denmark","finland":"Finland","austria":"Austria","belgium":"Belgium","ireland":"Ireland",
+    "canada":"Canada","australia":"Australia","singapore":"Singapore","taiwan":"Taiwan","hong kong":"Hong Kong",
+    "india":"India","thailand":"Thailand","malaysia":"Malaysia","philippines":"Philippines","indonesia":"Indonesia",
+    "vietnam":"Vietnam","israel":"Israel","turkey":"Türkiye","türkiye":"Türkiye",
+    "saudi arabia":"Saudi Arabia","united arab emirates":"UAE","uae":"UAE","qatar":"Qatar","kuwait":"Kuwait","iran":"Iran",
+    "brazil":"Brazil","argentina":"Argentina","chile":"Chile","mexico":"Mexico","colombia":"Colombia","peru":"Peru",
+    "south africa":"South Africa","egypt":"Egypt"
+}
+
+TLD_COUNTRY_MAP = {
+    "jp":"Japan","uk":"UK","de":"Germany","fr":"France","it":"Italy","es":"Spain","nl":"Netherlands","ch":"Switzerland",
+    "se":"Sweden","no":"Norway","dk":"Denmark","fi":"Finland","at":"Austria","be":"Belgium","ie":"Ireland",
+    "ca":"Canada","au":"Australia","cn":"China","kr":"South Korea","tw":"Taiwan","sg":"Singapore","hk":"Hong Kong",
+    "in":"India","tr":"Türkiye","sa":"Saudi Arabia","ae":"UAE","qa":"Qatar","kw":"Kuwait","il":"Israel","ir":"Iran",
+    "br":"Brazil","ar":"Argentina","cl":"Chile","mx":"Mexico","co":"Colombia","pe":"Peru","za":"South Africa","eg":"Egypt",
+    "us":"USA"
+}
+
+def _normalize_country(name: str) -> str:
+    if not name: return ""
+    key = re.sub(r"\s+", " ", name.strip().lower())
+    return COUNTRY_ALIASES.get(key, name.strip())
+
+def _extract_country_from_aff(aff: str) -> str:
+    """Affiliationから国名を推定。メールTLD→末尾トークン→全体スキャンの順で判定。"""
+    if not aff:
+        return ""
+    txt = aff
+
+    # 1) メールアドレスのTLDから推定
+    m = re.search(r'@[\w\.-]+\.(\w+)', txt)
+    if m:
+        tld = m.group(1).lower()
+        if tld in TLD_COUNTRY_MAP:
+            return TLD_COUNTRY_MAP[tld]
+
+    # 2) 末尾側の ; / , 区切りから国名らしいトークンを拾う
+    tail = re.split(r'[;]', txt)[-1]  # ; の右側を優先
+    tokens = [t.strip(" .,") for t in tail.split(",") if t.strip(" .,")]
+    for tok in reversed(tokens):
+        norm = _normalize_country(tok)
+        # エイリアスにヒット、または一般的な国名トークンなら採用
+        if norm != tok or norm in COUNTRY_ALIASES.values():
+            return COUNTRY_ALIASES.get(norm.lower(), norm)
+        if 2 <= len(tok) <= 40 and re.match(r"^[A-Za-zÀ-ÿ .'-]+$", tok):
+            return tok  # 見た目が国名っぽければ採用
+
+    # 3) 全体テキストから既知国名エイリアスを検索
+    for alias in sorted(COUNTRY_ALIASES.keys(), key=len, reverse=True):
+        if re.search(rf'(?i)(^|[,\s;]){re.escape(alias)}([,\s.;]|$)', txt):
+            return COUNTRY_ALIASES[alias]
+
+    return ""
+
 def parse_records(xml_text):
     if not xml_text:
         return []
@@ -247,15 +310,41 @@ def parse_records(xml_text):
             texts.append(f"{label}: {txt}" if label else txt)
         abstract = "\n".join(texts)
 
-        # 著者
-        authors = []
-        for au in art.findall(".//AuthorList/Author"):
+        # --- 著者（筆頭のみ + 2名以上なら", et al."）＋ 国名のみ（不明なら付けない） ---
+        authors_nodes = art.findall(".//AuthorList/Author")
+        first_author_name, counted, aff_raw = "", 0, ""
+
+        for au in authors_nodes:
             last = au.findtext("LastName") or ""
             init = au.findtext("Initials") or ""
+            collective = au.findtext("CollectiveName") or ""
             if last or init:
-                authors.append(f"{last} {init}".strip())
-        authors_line = (", ".join(authors[:3]) + (", et al." if len(authors) > 3 else "")) if authors else ""
+                name = f"{last} {init}".strip()
+                if not first_author_name:
+                    first_author_name = name
+                    aff_elem = au.find("AffiliationInfo/Affiliation")
+                    aff_raw = _itertext(aff_elem) if aff_elem is not None else ""
+                counted += 1
+            elif collective:
+                if not first_author_name:
+                    first_author_name = collective
+                counted += 1
 
+        # 筆頭にAffiliationが無ければ記事全体からフォールバック
+        if not aff_raw:
+            any_aff = art.find(".//AffiliationInfo/Affiliation")
+            aff_raw = _itertext(any_aff) if any_aff is not None else ""
+
+        country = _extract_country_from_aff(aff_raw)  # 不明なら "" が返る
+
+        authors_display = first_author_name or ""
+        if counted >= 2 and authors_display:
+            authors_display += ", et al."
+        if country:
+            authors_display += f"（{country}）"
+
+        authors_line = authors_display  # ← このauthors_lineをresults.appendに渡す
+        
         # ジャーナル（略称優先）
         journal = _prefer_abbrev(art)
 
