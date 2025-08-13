@@ -408,7 +408,7 @@ PROMPT_TEMPLATE = Template("""You are a specialized summarizer for radiation onc
 
 ### JSON Output Format
 - **title_ja**: A Japanese title (30-45 characters, ending with a noun, compressing any lengthy subtitles, and including the study design from the original title only if explicitly mentioned).
-- **bullets**: An array of 4 or 5 bullet points, each 60-120 characters long, written in a consistent "da/dearu" style (e.g., "〜である", "〜した").
+- **bullets**: An array of 4 or 5 bullet points, each with a character count between 60 and 120 (counting all characters, including full-width and half-width characters, as one). The bullets should be written in a consistent "da/dearu" style (e.g., "〜である", "〜した").
 
 ### Key Rules
 - **Fact Extraction Only**: Summarize only the facts present in the provided title and abstract. Do not add external knowledge, rephrase information with different meanings, or make assumptions.
@@ -432,7 +432,7 @@ PROMPT_TEMPLATE = Template("""You are a specialized summarizer for radiation onc
 
 ### Instructions for creating "bullets"
 - Create 4 or 5 bullet points.
-- Each bullet point must be between 60 and 120 characters in length.
+- Each bullet point must have a character count strictly between 60 and 120 characters, counting all characters (including full-width and half-width characters) as one.
 - Summarize findings, avoiding interpretation or advice.
 - When a summary exceeds 120 characters, prioritize the removal of less critical information like p-values or HR/CI to fit the character limit.
 - The final bullet point should summarize the conclusion or main takeaway as stated in the abstract.
