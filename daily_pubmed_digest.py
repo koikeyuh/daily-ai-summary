@@ -464,7 +464,7 @@ Before generating the final JSON, follow these steps internally:
 
 ### JSON Output Format
 - **title_ja**: A Japanese title (strictly 30-45 characters). It must end with a noun. Compress lengthy subtitles. Only include the study design (e.g., 第II相試験) if it's explicitly in the original title.
-- **bullets**: An array of 4 or 5 bullet points. Each bullet must be between 60 and 120 characters (all characters, including punctuation, are counted as one). The writing style must be the "da/dearu" form (e.g., "〜である", "〜した").
+- **bullets**: An array of 4 bullet points. Each bullet must be between 60 and 120 characters (all characters, including punctuation, are counted as one). The writing style must be the "da/dearu" form (e.g., "〜である", "〜した").
 
 ### Content & Style Guide
 - **Priority of Information**: When summarizing, prioritize information in this order: 1. Intervention & Outcomes, 2. Patient & Study Design, 3. Safety/Toxicity details.
