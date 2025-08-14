@@ -16,6 +16,7 @@ from email.mime.multipart import MIMEMultipart
 from email.utils import parseaddr
 from xml.etree import ElementTree as ET
 from google import genai
+from google.genai import types
 
 # ========= 環境変数 =========
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
@@ -28,6 +29,7 @@ PUBMED_TOOL_EMAIL = os.getenv("PUBMED_TOOL_EMAIL", GMAIL_ADDRESS)  # eutils &ema
 NCBI_API_KEY = os.getenv("NCBI_API_KEY", "")  # 任意（レート上限UP）
 SLEEP_BETWEEN_CALLS = float(os.getenv("SLEEP_BETWEEN_CALLS", "0.3"))  # 無料枠配慮
 WINDOW_DAYS = int(os.getenv("WINDOW_DAYS", "2"))  # EDATの固定ウィンドウ（取りこぼし低減）
+TEMPERATURE = float(os.getenv("TEMPERATURE", "0.2"))
 
 # ========= PubMed E-utilities =========
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
@@ -56,6 +58,39 @@ def load_sent_state():
 def save_sent_state(state: dict):
     with open(STATE_PATH, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2, sort_keys=True)
+
+def prune_sent_state(state: dict, days: int = 90):
+    """
+    sent_pmids.json の {pmid: {"added_at": ISO8601}} から
+    added_at が `days` 日より前のレコードを削除して返す。
+    解析不能な日付や added_at 無しは安全側で残します。
+    return: (new_state, removed_count)
+    """
+    if not isinstance(state, dict):
+        return state, 0
+
+    cutoff_utc = datetime.now(timezone.utc) - timedelta(days=days)
+    kept, removed = {}, 0
+
+    for pmid, meta in state.items():
+        ts = (meta or {}).get("added_at")
+        if not ts:
+            kept[pmid] = meta  # 移行直後などは残す（安全側）
+            continue
+        try:
+            dt = datetime.fromisoformat(ts)
+            if dt.tzinfo is None:
+                # 念のため（基本は +09:00 付きで保存されている想定）
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt_utc = dt.astimezone(timezone.utc)
+            if dt_utc >= cutoff_utc:
+                kept[pmid] = meta
+            else:
+                removed += 1
+        except Exception:
+            kept[pmid] = meta  # パース失敗は残す（安全側）
+
+    return kept, removed
 
 # ========= PubMed検索 =========
 def build_journal_query(journals):
@@ -417,6 +452,7 @@ def translate_title_only(title: str) -> str:
 
     client = genai.Client()
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    config=types.GenerateContentConfig(temperature=TEMPERATURE) # [0, 2]
 
     prompt = Template("""You are a highly specialized AI assistant whose sole purpose is to produce a single strict JSON object with a Japanese title translation of a radiation oncology paper title, and nothing else.
 
@@ -439,7 +475,8 @@ $TITLE
         # JSON 強制（google-genai v1 以降で有効／古い版でも無害）
         resp = client.models.generate_content(
             model=model_name,
-            contents=prompt
+            contents=prompt,
+            config=config
         )
         text = (_resp_to_text(resp) or "").strip()
         data = _force_json(text)
@@ -553,12 +590,13 @@ $ABSTRACT
 def summarize_title_and_bullets(title: str, abstract: str) -> dict:
     client = genai.Client()  # GEMINI_API_KEY は環境変数から
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    config=types.GenerateContentConfig(temperature=TEMPERATURE) # [0, 2]
     prompt = PROMPT_TEMPLATE.substitute(
         TITLE=title,
         ABSTRACT=(abstract[:7000] if abstract else "")
     )
     try:
-        resp = client.models.generate_content(model=model_name, contents=prompt)
+        resp = client.models.generate_content(model=model_name, contents=prompt, config=config)
         text = (_resp_to_text(resp) or "").strip()
         data = _force_json(text)
     except Exception:
@@ -658,11 +696,14 @@ def main():
 
     print(f"検索結果（重複前）: {len(pmids)}件")
 
-    # 送信済み状態のロード
+    # 送信済み状態のロード → ★ ここで剪定
     state = load_sent_state()
-    sent_set = set(state.keys())
+    prune_days = int(os.getenv("PRUNE_DAYS", "90"))
+    state, pruned = prune_sent_state(state, prune_days)
+    if pruned:
+        print(f"古い送信記録を {pruned} 件削除（>{prune_days}日）")
 
-    # 未送信のみ
+    sent_set = set(state.keys())
     new_pmids = [p for p in pmids if p not in sent_set]
     print(f"新規論文数: {len(new_pmids)}件")
 
